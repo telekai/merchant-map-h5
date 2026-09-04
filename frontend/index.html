@@ -854,19 +854,112 @@
         }
 
         // ===== 页面可见性：修复从导航APP返回后地图空白 =====
+        // 第三轮修复方案：销毁+重建地图（resize在WebGL上下文丢失时无效）
+        let refreshLock = false;
+
         function refreshMap() {
-            if (!map) return;
-            // 多次延迟调用resize，覆盖不同手机浏览器从后台恢复的速度差异
-            [50, 200, 500, 1000].forEach(delay => {
-                setTimeout(() => {
-                    if (window.AMap && map.resize) {
-                        map.resize();
-                    } else if (map.invalidateSize) {
-                        map.invalidateSize();
+            if (refreshLock) return;
+            if (!map || !userLocation) return;
+            refreshLock = true;
+
+            console.log("[refreshMap] 开始销毁+重建地图");
+
+            try {
+                // 1. 销毁旧地图实例
+                if (AMAP_KEY && window.AMap) {
+                    // 高德模式：destroy + 清空容器DOM
+                    if (infoWindow) { try { infoWindow.close(); } catch(e){} }
+                    if (merchantMarkers.length > 0) { try { map.remove(merchantMarkers); } catch(e){} }
+                    merchantMarkers = [];
+                    if (userMarker) { try { map.remove(userMarker); } catch(e){} }
+                    if (userCircle) { try { map.remove(userCircle); } catch(e){} }
+                    userMarker = null;
+                    userCircle = null;
+                    try { map.destroy(); } catch(e) {}
+                    map = null;
+                    // 清空容器内部DOM（高德destroy有时不彻底）
+                    var container = document.getElementById("map");
+                    container.innerHTML = "";
+                } else if (window.L) {
+                    // Leaflet模式
+                    if (cluster) { try { map.removeLayer(cluster); } catch(e){} }
+                    cluster = null;
+                    if (userMarker) { try { map.removeLayer(userMarker); } catch(e){} }
+                    if (userCircle) { try { map.removeLayer(userCircle); } catch(e){} }
+                    userMarker = null;
+                    userCircle = null;
+                    merchantMarkers.forEach(mk => { try { map.removeLayer(mk); } catch(e){} });
+                    merchantMarkers = [];
+                    try { map.remove(); } catch(e) {}
+                    map = null;
+                }
+
+                // 2. 重建地图
+                if (AMAP_KEY && window.AMap) {
+                    map = new AMap.Map("map", {
+                        zoom: 14,
+                        center: [userLocation.lng, userLocation.lat],
+                        zoomEnable: true,
+                        dragEnable: true,
+                        resizeEnable: true,
+                    });
+
+                    AMap.plugin(["AMap.ToolBar"], () => {
+                        try { map.addControl(new AMap.ToolBar({ liteStyle: true, position: "RB" })); } catch(e){}
+                    });
+
+                    // 重新绑定点击事件
+                    map.on("click", (e) => {
+                        userLocation = { lng: e.lnglat.getLng(), lat: e.lnglat.getLat() };
+                        updateUserMarker();
+                        updateLocationText("已选位置");
+                        loadNearbyMerchants();
+                    });
+
+                    updateUserMarker();
+
+                    // 3. 重新渲染商户标注
+                    if (allNearbyMerchants && allNearbyMerchants.length > 0) {
+                        renderMerchantMarkers();
                     }
-                }, delay);
-            });
+
+                    console.log("[refreshMap] 高德地图重建完成");
+
+                } else if (window.L) {
+                    map = L.map("map", {
+                        zoomControl: false,
+                        attributionControl: false,
+                    }).setView([userLocation.lat, userLocation.lng], 14);
+
+                    L.tileLayer("https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}", {
+                        subdomains: ["1", "2", "3", "4"],
+                        maxZoom: 18,
+                    }).addTo(map);
+
+                    L.control.zoom({ position: "bottomright" }).addTo(map);
+
+                    map.on("click", (e) => {
+                        userLocation = { lng: e.latlng.lng, lat: e.latlng.lat };
+                        updateUserMarker();
+                        updateLocationText("已选位置");
+                        loadNearbyMerchants();
+                    });
+
+                    updateUserMarker();
+
+                    if (allNearbyMerchants && allNearbyMerchants.length > 0) {
+                        renderMerchantMarkers();
+                    }
+
+                    console.log("[refreshMap] Leaflet地图重建完成");
+                }
+            } catch(err) {
+                console.error("[refreshMap] 重建失败:", err);
+            } finally {
+                refreshLock = false;
+            }
         }
+
         // visibilitychange：页面从隐藏恢复到可见（Android Chrome等）
         document.addEventListener("visibilitychange", () => {
             if (!document.hidden) refreshMap();
@@ -879,6 +972,40 @@
         window.addEventListener("focus", () => refreshMap());
         // resume：某些Webview的生命周期事件
         window.addEventListener("resume", () => refreshMap());
+
+        // ===== 轮询兜底机制 =====
+        // 部分手机浏览器从导航APP返回时不触发任何事件，
+        // 用定时器检测地图容器是否空白，若空白则重建
+        let pollTimer = null;
+        let lastVisibility = !document.hidden;
+        function startMapPolling() {
+            if (pollTimer) clearInterval(pollTimer);
+            pollTimer = setInterval(() => {
+                if (document.hidden) {
+                    lastVisibility = false;
+                    return;
+                }
+                if (!lastVisibility && document.visibilityState !== "hidden") {
+                    // 从隐藏恢复到可见
+                    lastVisibility = true;
+                    checkMapBlank();
+                }
+            }, 800);
+        }
+        function checkMapBlank() {
+            if (!map || !userLocation) return;
+            try {
+                var container = document.getElementById("map");
+                // 检查容器内是否有canvas或瓦片元素
+                var hasCanvas = container.querySelector("canvas");
+                var hasTiles = container.querySelectorAll(".amap-layer, .leaflet-tile-pane, .amap-maps").length > 0;
+                if (!hasCanvas && !hasTiles) {
+                    console.log("[polling] 检测到地图空白，触发重建");
+                    refreshMap();
+                }
+            } catch(e) {}
+        }
+        startMapPolling();
 
         // ===== 启动 =====
         window.addEventListener("DOMContentLoaded", () => {

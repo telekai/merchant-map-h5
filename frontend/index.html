@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>周边商户地图</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f5f5; color: #333; }
+        html, body { height: 100%; overflow: hidden; }
+
+        /* 顶部栏 */
+        .header {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+            background: linear-gradient(135deg, #1a5276, #2e86c1);
+            color: #fff; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        .header h1 { font-size: 17px; font-weight: 600; }
+        .header .stats { font-size: 12px; opacity: 0.85; }
+
+        /* 定位状态 */
+        .locate-bar {
+            position: fixed; top: 52px; left: 0; right: 0; z-index: 999;
+            background: #fff; padding: 8px 16px; display: flex; align-items: center; justify-content: space-between;
+            border-bottom: 1px solid #eee; font-size: 13px;
+        }
+        .locate-bar .status { display: flex; align-items: center; gap: 6px; }
+        .locate-bar .dot { width: 8px; height: 8px; border-radius: 50%; }
+        .dot.green { background: #27ae60; }
+        .dot.red { background: #e74c3c; }
+        .dot.yellow { background: #f39c12; }
+        .locate-bar .relocate { color: #2e86c1; font-size: 13px; cursor: pointer; }
+
+        /* 筛选栏 */
+        .filter-bar {
+            position: fixed; top: 88px; left: 0; right: 0; z-index: 998;
+            background: #fff; padding: 8px 12px; display: flex; gap: 8px; overflow-x: auto; white-space: nowrap;
+            border-bottom: 1px solid #eee;
+        }
+        .filter-chip {
+            padding: 4px 14px; border-radius: 16px; font-size: 13px; border: 1px solid #ddd;
+            background: #fff; color: #666; cursor: pointer; flex-shrink: 0;
+        }
+        .filter-chip.active { background: #2e86c1; color: #fff; border-color: #2e86c1; }
+
+        /* 地图容器 */
+        #map-container {
+            position: fixed; top: 132px; left: 0; right: 0; bottom: 56px;
+        }
+        #map { width: 100%; height: 100%; }
+
+        /* 列表容器 */
+        #list-container {
+            position: fixed; top: 132px; left: 0; right: 0; bottom: 56px;
+            overflow-y: auto; -webkit-overflow-scrolling: touch; display: none;
+        }
+        .merchant-card {
+            background: #fff; margin: 8px 12px; padding: 12px; border-radius: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08); display: flex; gap: 10px; cursor: pointer;
+            transition: transform 0.15s;
+        }
+        .merchant-card:active { transform: scale(0.98); }
+        .card-icon {
+            width: 40px; height: 40px; border-radius: 8px; display: flex; align-items: center;
+            justify-content: center; font-size: 20px; flex-shrink: 0;
+        }
+        .icon-餐饮 { background: #fff3e0; }
+        .icon-奶茶 { background: #fce4ec; }
+        .icon-咖啡 { background: #efebe9; }
+        .icon-加油站 { background: #e8f5e9; }
+        .card-body { flex: 1; min-width: 0; }
+        .card-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .card-meta { font-size: 12px; color: #999; display: flex; gap: 8px; align-items: center; }
+        .card-addr { font-size: 12px; color: #aaa; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .card-dist { font-size: 13px; color: #2e86c1; font-weight: 600; flex-shrink: 0; }
+
+        /* 底部Tab */
+        .bottom-tab {
+            position: fixed; bottom: 0; left: 0; right: 0; z-index: 1000;
+            background: #fff; border-top: 1px solid #eee; display: flex; height: 56px;
+        }
+        .tab-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 11px; color: #999; cursor: pointer; }
+        .tab-item.active { color: #2e86c1; }
+        .tab-item .icon { font-size: 22px; margin-bottom: 2px; }
+
+        /* 加载状态 */
+        .loading-mask {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 2000;
+            background: rgba(255,255,255,0.9); display: flex; flex-direction: column;
+            align-items: center; justify-content: center; gap: 16px;
+        }
+        .spinner { width: 36px; height: 36px; border: 3px solid #eee; border-top-color: #2e86c1; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-text { font-size: 14px; color: #666; }
+
+        /* 信息窗 */
+        .info-window { padding: 6px 4px; min-width: 160px; }
+        .info-window .iw-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+        .info-window .iw-meta { font-size: 12px; color: #888; margin-bottom: 2px; }
+        .info-window .iw-addr { font-size: 12px; color: #aaa; line-height: 1.4; }
+
+        /* Toast */
+        .toast {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 3000;
+            background: rgba(0,0,0,0.8); color: #fff; padding: 12px 20px; border-radius: 8px;
+            font-size: 14px; max-width: 280px; text-align: center; display: none;
+        }
+
+        /* 手动定位 */
+        .manual-locate {
+            position: fixed; top: 132px; left: 16px; right: 16px; z-index: 1001;
+            background: #fff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            padding: 16px; display: none;
+        }
+        .manual-locate h3 { font-size: 15px; margin-bottom: 12px; }
+        .manual-locate input { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; margin-bottom: 8px; }
+        .manual-locate .btns { display: flex; gap: 8px; }
+        .manual-locate .btns button { flex: 1; padding: 8px; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; }
+        .btn-primary { background: #2e86c1; color: #fff; }
+        .btn-secondary { background: #eee; color: #666; }
+        .quick-locs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+        .quick-locs .chip { padding: 4px 12px; border-radius: 16px; background: #e8f4fd; color: #2e86c1; font-size: 12px; cursor: pointer; }
+
+        /* 半径选择 */
+        .radius-bar {
+            position: fixed; top: 88px; left: 0; right: 0; z-index: 997;
+            background: #fff; padding: 6px 12px; display: flex; gap: 8px; overflow-x: auto;
+            border-bottom: 1px solid #eee;
+        }
+        .radius-chip {
+            padding: 3px 12px; border-radius: 14px; font-size: 12px; border: 1px solid #ddd;
+            background: #fff; color: #666; cursor: pointer; flex-shrink: 0;
+        }
+        .radius-chip.active { background: #e74c3c; color: #fff; border-color: #e74c3c; }
+    </style>
+</head>
+<body>
+    <!-- 顶部栏 -->
+    <div class="header">
+        <h1>周边商户地图</h1>
+        <div class="stats" id="stats-text">加载中...</div>
+    </div>
+
+    <!-- 定位状态栏 -->
+    <div class="locate-bar">
+        <div class="status">
+            <span class="dot yellow" id="locate-dot"></span>
+            <span id="locate-text">正在定位...</span>
+        </div>
+        <div class="relocate" id="btn-relocate">重新定位</div>
+    </div>
+
+    <!-- 行业筛选 -->
+    <div class="filter-bar">
+        <div class="filter-chip active" data-industry="">全部</div>
+        <div class="filter-chip" data-industry="餐饮">餐饮</div>
+        <div class="filter-chip" data-industry="奶茶">奶茶</div>
+        <div class="filter-chip" data-industry="咖啡">咖啡</div>
+        <div class="filter-chip" data-industry="加油站">加油站</div>
+    </div>
+
+    <!-- 半径选择 -->
+    <div class="radius-bar">
+        <div class="radius-chip" data-radius="1000">1km</div>
+        <div class="radius-chip active" data-radius="5000">5km</div>
+        <div class="radius-chip" data-radius="10000">10km</div>
+    </div>
+
+    <!-- 手动定位面板 -->
+    <div class="manual-locate" id="manual-panel">
+        <h3>手动选择位置</h3>
+        <div class="quick-locs">
+            <span class="chip" data-lng="120.020676" data-lat="30.283746">仓前·未来科技城</span>
+            <span class="chip" data-lng="120.216012" data-lat="30.418686">临平银泰城</span>
+            <span class="chip" data-lng="120.088915" data-lat="30.330076">良渚文化村</span>
+            <span class="chip" data-lng="120.142052" data-lat="30.319811">拱墅运河广场</span>
+            <span class="chip" data-lng="120.119092" data-lat="30.274524">城西银泰城</span>
+        </div>
+        <input type="text" id="manual-lng" placeholder="经度 (如 120.02)" inputmode="decimal">
+        <input type="text" id="manual-lat" placeholder="纬度 (如 30.28)" inputmode="decimal">
+        <div class="btns">
+            <button class="btn-primary" id="btn-manual-confirm">确认位置</button>
+            <button class="btn-secondary" id="btn-manual-cancel">取消</button>
+        </div>
+    </div>
+
+    <!-- 地图容器 -->
+    <div id="map-container">
+        <div id="map"></div>
+    </div>
+
+    <!-- 列表容器 -->
+    <div id="list-container"></div>
+
+    <!-- 底部Tab -->
+    <div class="bottom-tab">
+        <div class="tab-item active" data-view="map" id="tab-map">
+            <span class="icon">🗺️</span>
+            <span>地图</span>
+        </div>
+        <div class="tab-item" data-view="list" id="tab-list">
+            <span class="icon">📋</span>
+            <span>列表</span>
+        </div>
+    </div>
+
+    <!-- 加载遮罩 -->
+    <div class="loading-mask" id="loading">
+        <div class="spinner"></div>
+        <div class="loading-text" id="loading-text">正在获取定位...</div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <!-- 高德地图JS API -->
+    <script>
+        // ===== 配置 =====
+        // 本机开发使用离线模式（不依赖高德JS API Key）
+        // 正式部署时替换为真实高德JS API Key
+        const AMAP_KEY = "aa0cbc9763f255381f07ba4960ffb968"; // 高德JS API Key
+        // 部署后自动使用当前域名（HTTP/HTTPS自适应），本地开发回退到localhost
+        const API_BASE = window.location.origin;
+        const DEFAULT_RADIUS = 5000;
+        const DEFAULT_CENTER = { lng: 120.02, lat: 30.28 }; // 默认中心：杭州余杭区
+
+        // ===== 全局状态 =====
+        let map = null;
+        let userMarker = null;
+        let userCircle = null;
+        let merchantMarkers = [];
+        let cluster = null;
+        let userLocation = null;
+        let currentRadius = DEFAULT_RADIUS;
+        let currentIndustry = "";
+        let currentView = "map";
+        let allNearbyMerchants = [];
+        let pendingRender = false;  // 标记是否有等待渲染的数据
+        let mapLoaded = false;
+
+        // ===== Toast =====
+        function showToast(msg, duration) {
+            const t = document.getElementById("toast");
+            t.textContent = msg;
+            t.style.display = "block";
+            setTimeout(() => t.style.display = "none", duration || 2000);
+        }
+
+        // ===== 距离格式化 =====
+        function formatDistance(d) {
+            if (d < 1000) return d.toFixed(0) + "m";
+            return (d / 1000).toFixed(1) + "km";
+        }
+
+        // ===== 行业图标 =====
+        function getIndustryIcon(industry) {
+            const icons = { "餐饮": "🍽️", "奶茶": "🧋", "咖啡": "☕", "加油站": "⛽" };
+            return icons[industry] || "📍";
+        }
+
+        // ===== 获取定位 =====
+        function getLocation() {
+            document.getElementById("loading").style.display = "flex";
+            document.getElementById("loading-text").textContent = "正在获取定位...";
+            document.getElementById("locate-dot").className = "dot yellow";
+            document.getElementById("locate-text").textContent = "正在定位...";
+
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                        userLocation = {
+                            lng: pos.coords.longitude,
+                            lat: pos.coords.latitude,
+                        };
+                        onLocationSuccess("GPS定位成功");
+                    },
+                    (err) => {
+                        console.log("GPS定位失败:", err.message);
+                        // 降级：使用默认位置（杭州余杭区中心）
+                        userLocation = { ...DEFAULT_CENTER };
+                        onLocationFail("GPS定位失败，已使用默认位置");
+                    },
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+                );
+            } else {
+                userLocation = { ...DEFAULT_CENTER };
+                onLocationFail("浏览器不支持定位，已使用默认位置");
+            }
+        }
+
+        function onLocationSuccess(msg) {
+            document.getElementById("loading").style.display = "none";
+            document.getElementById("locate-dot").className = "dot green";
+            document.getElementById("locate-text").textContent = msg + ` (${userLocation.lng.toFixed(4)}, ${userLocation.lat.toFixed(4)})`;
+            initMap();
+            // 等待地图加载完成后再加载商户
+            waitForMapThenLoad();
+        }
+
+        function onLocationFail(msg) {
+            document.getElementById("loading").style.display = "none";
+            document.getElementById("locate-dot").className = "dot yellow";
+            document.getElementById("locate-text").textContent = msg;
+            showToast(msg);
+            initMap();
+            waitForMapThenLoad();
+        }
+
+        function waitForMapThenLoad() {
+            if (mapLoaded) {
+                loadNearbyMerchants();
+            } else {
+                // 等待地图加载完成
+                setTimeout(waitForMapThenLoad, 200);
+            }
+        }
+
+        // ===== 初始化地图 =====
+        function initMap() {
+            if (mapLoaded) {
+                // 已初始化，只需重新定位
+                map.setCenter([userLocation.lng, userLocation.lat]);
+                updateUserMarker();
+                return;
+            }
+
+            // 动态加载高德JS API
+            if (AMAP_KEY) {
+                // 有Key：使用高德地图
+                const script = document.createElement("script");
+                script.src = `https://webapi.amap.com/maps?v=2.0&key=${AMAP_KEY}`;
+                script.onload = () => {
+                    createAMap();
+                    mapLoaded = true;
+                };
+                document.head.appendChild(script);
+            } else {
+                // 无Key：使用离线Leaflet地图（OpenStreetMap瓦片）
+                loadLeafletMap();
+            }
+        }
+
+        // ===== Leaflet离线地图（开发模式） =====
+        function loadLeafletMap() {
+            // 加载Leaflet CSS
+            const cssLink = document.createElement("link");
+            cssLink.rel = "stylesheet";
+            cssLink.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+            document.head.appendChild(cssLink);
+
+            // 加载Leaflet JS + MarkerCluster
+            const script = document.createElement("script");
+            script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+            script.onload = () => {
+                createLeafletMap();
+                mapLoaded = true;
+
+                // 加载MarkerCluster
+                const clusterCss = document.createElement("link");
+                clusterCss.rel = "stylesheet";
+                clusterCss.href = "https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css";
+                document.head.appendChild(clusterCss);
+
+                const clusterJs = document.createElement("script");
+                clusterJs.src = "https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js";
+                clusterJs.onload = () => {
+                    // 重新渲染商户标注（如果已加载）
+                    if (allNearbyMerchants && allNearbyMerchants.length > 0) {
+                        renderMerchantMarkers();
+                    }
+                };
+                document.head.appendChild(clusterJs);
+            };
+            document.head.appendChild(script);
+        }
+
+        // ===== 高德地图模式 =====
+        function createAMap() {
+            map = new AMap.Map("map", {
+                zoom: 14,
+                center: [userLocation.lng, userLocation.lat],
+                zoomEnable: true,
+                dragEnable: true,
+                resizeEnable: true,
+            });
+
+            // 添加缩放控件
+            AMap.plugin(["AMap.ToolBar"], () => {
+                map.addControl(new AMap.ToolBar({ liteStyle: true, position: "RB" }));
+            });
+
+            // 用户位置标记
+            updateUserMarker();
+
+            // 点击地图设置位置
+            map.on("click", (e) => {
+                userLocation = { lng: e.lnglat.getLng(), lat: e.lnglat.getLat() };
+                updateUserMarker();
+                loadNearbyMerchants();
+            });
+        }
+
+        function createLeafletMap() {
+            map = L.map("map", {
+                zoomControl: false,
+                attributionControl: false,
+            }).setView([userLocation.lat, userLocation.lng], 14);
+
+            // 使用高德地图瓦片（无需Key的版式）
+            L.tileLayer("https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}", {
+                subdomains: ["1", "2", "3", "4"],
+                maxZoom: 18,
+            }).addTo(map);
+
+            // 添加缩放控件在右下角
+            L.control.zoom({ position: "bottomright" }).addTo(map);
+
+            // 用户位置标记
+            updateUserMarker();
+
+            // 点击地图设置位置
+            map.on("click", (e) => {
+                userLocation = { lng: e.latlng.lng, lat: e.latlng.lat };
+                updateUserMarker();
+                loadNearbyMerchants();
+            });
+        }
+
+        function updateUserMarker() {
+            if (!map) return;
+
+            if (AMAP_KEY && window.AMap) {
+                // 高德地图模式
+                if (userMarker) { map.remove(userMarker); }
+                if (userCircle) { map.remove(userCircle); }
+
+                userMarker = new AMap.Marker({
+                    position: [userLocation.lng, userLocation.lat],
+                    content: '<div style="width:16px;height:16px;background:#2e86c1;border:3px solid #fff;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>',
+                    offset: new AMap.Pixel(-8, -8),
+                });
+                map.add(userMarker);
+
+                userCircle = new AMap.Circle({
+                    center: [userLocation.lng, userLocation.lat],
+                    radius: currentRadius,
+                    strokeColor: "#2e86c1",
+                    strokeWeight: 2,
+                    strokeOpacity: 0.5,
+                    fillColor: "#2e86c1",
+                    fillOpacity: 0.08,
+                });
+                map.add(userCircle);
+            } else if (window.L) {
+                // Leaflet模式
+                if (userMarker) { map.removeControl(userMarker); map.removeLayer(userMarker); }
+                if (userCircle) { map.removeLayer(userCircle); }
+
+                userMarker = L.circleMarker([userLocation.lat, userLocation.lng], {
+                    radius: 10,
+                    color: "#fff",
+                    weight: 3,
+                    fillColor: "#2e86c1",
+                    fillOpacity: 1,
+                }).addTo(map);
+
+                userCircle = L.circle([userLocation.lat, userLocation.lng], {
+                    radius: currentRadius,
+                    color: "#2e86c1",
+                    weight: 2,
+                    opacity: 0.5,
+                    fillColor: "#2e86c1",
+                    fillOpacity: 0.08,
+                }).addTo(map);
+            }
+        }
+
+        // ===== 加载周边商户 =====
+        async function loadNearbyMerchants() {
+            if (!userLocation) return;
+
+            document.getElementById("loading-text").textContent = "正在搜索周边商户...";
+            document.getElementById("loading").style.display = "flex";
+
+            const params = new URLSearchParams({
+                lat: userLocation.lat,
+                lng: userLocation.lng,
+                radius: currentRadius,
+                page: 1,
+                page_size: 200,
+            });
+            if (currentIndustry) params.append("industry", currentIndustry);
+
+            try {
+                const resp = await fetch(`${API_BASE}/api/nearby?${params}`);
+                const data = await resp.json();
+
+                allNearbyMerchants = data.data || [];
+                document.getElementById("stats-text").textContent =
+                    `周边${formatDistance(currentRadius)}内 ${data.total} 家商户`;
+
+                renderMerchantMarkers();
+                renderList();
+            } catch (err) {
+                console.error("加载商户失败:", err);
+                showToast("加载商户失败，请检查网络");
+            } finally {
+                document.getElementById("loading").style.display = "none";
+            }
+        }
+
+        // ===== 商户信息窗口 =====
+        let infoWindow = null;
+
+        function showMerchantInfo(m) {
+            const html = `
+                <div style="padding:6px 4px;min-width:200px;max-width:260px;">
+                    <div style="font-size:16px;font-weight:600;color:#1a1a2e;margin-bottom:6px;display:flex;align-items:center;gap:6px;">
+                        <span style="font-size:18px;">${getIndustryIcon(m.industry)}</span>${m.name}
+                    </div>
+                    <div style="font-size:13px;color:#666;margin-bottom:4px;">
+                        <span style="color:#2e86c1;font-weight:500;">${m.industry}</span>
+                        <span style="margin:0 6px;color:#ddd;">|</span>
+                        <span style="color:#e67e22;font-weight:500;">${formatDistance(m.distance)}</span>
+                    </div>
+                    ${m.business_hours ? `<div style="font-size:13px;color:#666;margin-bottom:4px;">🕐 ${m.business_hours}</div>` : ''}
+                    <div style="font-size:13px;color:#888;line-height:1.4;">📍 ${m.address}</div>
+                </div>
+            `;
+
+            if (AMAP_KEY && window.AMap) {
+                if (!infoWindow) {
+                    infoWindow = new AMap.InfoWindow({
+                        offset: new AMap.Pixel(0, -20),
+                        closeWhenClickMap: true,
+                    });
+                }
+                infoWindow.setContent(html);
+                infoWindow.open(map, [m.lng, m.lat]);
+            } else if (window.L) {
+                L.popup({ offset: [0, -10], maxWidth: 280 })
+                    .setLatLng([m.lat, m.lng])
+                    .setContent(html)
+                    .openOn(map);
+            }
+        }
+
+        // ===== 渲染商户标注 =====
+        function renderMerchantMarkers() {
+            if (!map) return;
+
+            // 清除旧标注
+            if (merchantMarkers.length > 0) {
+                if (AMAP_KEY && window.AMap) {
+                    map.remove(merchantMarkers);
+                } else if (window.L) {
+                    merchantMarkers.forEach(mk => map.removeLayer(mk));
+                }
+            }
+            merchantMarkers = [];
+
+            if (allNearbyMerchants.length === 0) return;
+
+            if (AMAP_KEY && window.AMap) {
+                // 高德地图模式：直接添加marker到地图
+                allNearbyMerchants.forEach((m) => {
+                    const marker = new AMap.Marker({
+                        position: [m.lng, m.lat],
+                        content: `<div style="font-size:20px;cursor:pointer;">${getIndustryIcon(m.industry)}</div>`,
+                        offset: new AMap.Pixel(-10, -10),
+                    });
+                    marker.on("click", () => showMerchantInfo(m));
+                    merchantMarkers.push(marker);
+                });
+                map.add(merchantMarkers);
+            } else if (window.L) {
+                // Leaflet模式
+                if (window.L.markerClusterGroup) {
+                    cluster = L.markerClusterGroup({ maxClusterRadius: 60 });
+                    allNearbyMerchants.forEach((m) => {
+                        const marker = L.marker([m.lat, m.lng], {
+                            icon: L.divIcon({
+                                html: `<div style="font-size:20px;">${getIndustryIcon(m.industry)}</div>`,
+                                iconSize: [24, 24],
+                                className: "",
+                            }),
+                        });
+                        marker.bindPopup(`
+                            <div class="info-window">
+                                <div class="iw-name">${m.name}</div>
+                                <div class="iw-meta">${m.industry} · ${formatDistance(m.distance)}</div>
+                                <div class="iw-meta">${m.business_hours || ""}</div>
+                                <div class="iw-addr">${m.address}</div>
+                            </div>
+                        `);
+                        cluster.addLayer(marker);
+                    });
+                    map.addLayer(cluster);
+                } else {
+                    // 无聚合插件，直接添加
+                    allNearbyMerchants.forEach((m) => {
+                        const marker = L.marker([m.lat, m.lng], {
+                            icon: L.divIcon({
+                                html: `<div style="font-size:20px;">${getIndustryIcon(m.industry)}</div>`,
+                                iconSize: [24, 24],
+                                className: "",
+                            }),
+                        });
+                        marker.bindPopup(`
+                            <div class="info-window">
+                                <div class="iw-name">${m.name}</div>
+                                <div class="iw-meta">${m.industry} · ${formatDistance(m.distance)}</div>
+                                <div class="iw-meta">${m.business_hours || ""}</div>
+                                <div class="iw-addr">${m.address}</div>
+                            </div>
+                        `);
+                        marker.addTo(map);
+                        merchantMarkers.push(marker);
+                    });
+                }
+            }
+        }
+
+        // ===== 渲染列表 =====
+        function renderList() {
+            const container = document.getElementById("list-container");
+            if (allNearbyMerchants.length === 0) {
+                container.innerHTML = '<div style="text-align:center;padding:40px;color:#999;">5公里范围内未找到商户</div>';
+                return;
+            }
+
+            container.innerHTML = allNearbyMerchants.map((m) => `
+                <div class="merchant-card" data-id="${m.id}" data-lng="${m.lng}" data-lat="${m.lat}">
+                    <div class="card-icon icon-${m.industry}">
+                        ${getIndustryIcon(m.industry)}
+                    </div>
+                    <div class="card-body">
+                        <div class="card-name">${m.name}</div>
+                        <div class="card-meta">
+                            <span>${m.industry}</span>
+                            <span>${m.business_hours || ""}</span>
+                        </div>
+                        <div class="card-addr">${m.address}</div>
+                    </div>
+                    <div class="card-dist">${formatDistance(m.distance)}</div>
+                </div>
+            `).join("");
+
+            // 点击列表项 → 地图聚焦
+            container.querySelectorAll(".merchant-card").forEach((card) => {
+                card.addEventListener("click", () => {
+                    const lng = parseFloat(card.dataset.lng);
+                    const lat = parseFloat(card.dataset.lat);
+                    switchView("map");
+                    if (map) {
+                        if (AMAP_KEY && window.AMap) {
+                            map.setZoomAndCenter(16, [lng, lat]);
+                        } else if (window.L) {
+                            map.setView([lat, lng], 16);
+                        }
+                    }
+                });
+            });
+        }
+
+        // ===== 视图切换 =====
+        function switchView(view) {
+            currentView = view;
+            document.getElementById("map-container").style.display = view === "map" ? "block" : "none";
+            document.getElementById("list-container").style.display = view === "list" ? "block" : "none";
+            document.getElementById("tab-map").classList.toggle("active", view === "map");
+            document.getElementById("tab-list").classList.toggle("active", view === "list");
+
+            if (view === "map" && map) {
+                setTimeout(() => map.invalidateSize ? map.invalidateSize() : null, 100);
+            }
+        }
+
+        // ===== 事件绑定 =====
+        function bindEvents() {
+            // 重新定位
+            document.getElementById("btn-relocate").addEventListener("click", () => {
+                if (navigator.geolocation) {
+                    document.getElementById("loading").style.display = "flex";
+                    document.getElementById("loading-text").textContent = "正在重新定位...";
+                    navigator.geolocation.getCurrentPosition(
+                        (pos) => {
+                            userLocation = { lng: pos.coords.longitude, lat: pos.coords.latitude };
+                            document.getElementById("loading").style.display = "none";
+                            document.getElementById("locate-dot").className = "dot green";
+                            document.getElementById("locate-text").textContent =
+                                `已定位 (${userLocation.lng.toFixed(4)}, ${userLocation.lat.toFixed(4)})`;
+                            updateUserMarker();
+                            loadNearbyMerchants();
+                        },
+                        () => {
+                            document.getElementById("loading").style.display = "none";
+                            showToast("定位失败，请尝试手动选择");
+                            document.getElementById("manual-panel").style.display = "block";
+                        },
+                        { enableHighAccuracy: true, timeout: 10000 }
+                    );
+                } else {
+                    showToast("浏览器不支持定位");
+                }
+            });
+
+            // 行业筛选
+            document.querySelectorAll(".filter-chip").forEach((chip) => {
+                chip.addEventListener("click", () => {
+                    document.querySelectorAll(".filter-chip").forEach((c) => c.classList.remove("active"));
+                    chip.classList.add("active");
+                    currentIndustry = chip.dataset.industry;
+                    loadNearbyMerchants();
+                });
+            });
+
+            // 半径选择
+            document.querySelectorAll(".radius-chip").forEach((chip) => {
+                chip.addEventListener("click", () => {
+                    document.querySelectorAll(".radius-chip").forEach((c) => c.classList.remove("active"));
+                    chip.classList.add("active");
+                    currentRadius = parseInt(chip.dataset.radius);
+                    updateUserMarker();
+                    loadNearbyMerchants();
+                });
+            });
+
+            // 视图切换
+            document.getElementById("tab-map").addEventListener("click", () => switchView("map"));
+            document.getElementById("tab-list").addEventListener("click", () => switchView("list"));
+
+            // 手动定位
+            document.getElementById("btn-manual-cancel").addEventListener("click", () => {
+                document.getElementById("manual-panel").style.display = "none";
+            });
+            document.getElementById("btn-manual-confirm").addEventListener("click", () => {
+                const lng = parseFloat(document.getElementById("manual-lng").value);
+                const lat = parseFloat(document.getElementById("manual-lat").value);
+                if (isNaN(lng) || isNaN(lat)) {
+                    showToast("请输入有效的经纬度");
+                    return;
+                }
+                userLocation = { lng, lat };
+                document.getElementById("manual-panel").style.display = "none";
+                document.getElementById("locate-dot").className = "dot green";
+                document.getElementById("locate-text").textContent =
+                    `已定位 (${lng.toFixed(4)}, ${lat.toFixed(4)})`;
+                updateUserMarker();
+                loadNearbyMerchants();
+            });
+            // 快捷位置
+            document.querySelectorAll(".quick-locs .chip").forEach((chip) => {
+                chip.addEventListener("click", () => {
+                    userLocation = {
+                        lng: parseFloat(chip.dataset.lng),
+                        lat: parseFloat(chip.dataset.lat),
+                    };
+                    document.getElementById("manual-lng").value = userLocation.lng;
+                    document.getElementById("manual-lat").value = userLocation.lat;
+                });
+            });
+        }
+
+        // ===== 启动 =====
+        window.addEventListener("DOMContentLoaded", () => {
+            bindEvents();
+            getLocation();
+        });
+    </script>
+</body>
+</html>

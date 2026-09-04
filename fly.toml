@@ -1,0 +1,25 @@
+# Fly.io 配置文件
+# 商户地图H5项目 - Python + SQLite 纯标准库后端
+
+app = "merchant-map-h5"
+primary_region = "nrt"  # 东京节点，国内访问较快
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8000
+  force_https = true  # 强制HTTPS（Geolocation API需要）
+  auto_stop_machines = false  # 不自动停机，保持7x24在线
+  auto_start_machines = true
+  min_machines_running = 1  # 至少保持1个实例运行
+
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 250
+    soft_limit = 200
+
+[[vm]]
+  cpu = 1
+  cpu_kind = "shared"
+  memory = 256

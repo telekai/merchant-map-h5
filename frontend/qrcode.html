@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>商户地图 - 二维码</title>
+    <style>
+        body { font-family: -apple-system, "Microsoft YaHei", sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #f0f2f5; margin: 0; }
+        .card { background: #fff; padding: 32px 40px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); text-align: center; }
+        .card h1 { font-size: 20px; color: #1a5276; margin-bottom: 8px; }
+        .card p { font-size: 14px; color: #888; margin-bottom: 20px; }
+        #qrcode { display: inline-block; }
+        .url { margin-top: 16px; font-size: 13px; color: #aaa; word-break: break-all; max-width: 280px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>周边商户地图</h1>
+        <p>扫码进入H5页面</p>
+        <div id="qrcode"></div>
+        <div class="url" id="url-text"></div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <script>
+        var url = window.location.origin + "/";
+        document.getElementById("url-text").textContent = url;
+        new QRCode(document.getElementById("qrcode"), {
+            text: url,
+            width: 256,
+            height: 256,
+            colorDark: "#000000",
+            colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.L
+        });
+    </script>
+</body>
+</html>

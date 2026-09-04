@@ -1,0 +1,16 @@
+# Render.com 配置文件
+# 商户地图H5项目 - Python + SQLite 纯标准库后端
+
+services:
+  - type: web
+    name: merchant-map-h5
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 8000

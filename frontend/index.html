@@ -261,21 +261,54 @@
         }
 
         // ===== 逆地理编码（经纬度→地址） =====
+        const WEB_KEY = "b1618a16fc800b1bf7a5afc5fc4b7a99c0"; // 高德Web服务Key（REST API降级用）
+
         function updateLocationText(prefix) {
             const textEl = document.getElementById("locate-text");
+            const coordStr = `(${userLocation.lng.toFixed(4)}, ${userLocation.lat.toFixed(4)})`;
+            let done = false;
+
+            function setAddr(addr) {
+                if (done) return;
+                done = true;
+                textEl.textContent = prefix + " " + addr;
+            }
+            function setCoord() {
+                if (done) return;
+                done = true;
+                textEl.textContent = prefix + " " + coordStr;
+            }
+            function tryRestApi() {
+                if (done) return;
+                const url = `https://restapi.amap.com/v3/geocode/regeo?key=${WEB_KEY}&location=${userLocation.lng},${userLocation.lat}&radius=1000&extensions=base`;
+                fetch(url)
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.status === "1" && data.regeocode) {
+                            setAddr(data.regeocode.formatted_address);
+                        } else {
+                            setCoord();
+                        }
+                    })
+                    .catch(() => setCoord());
+            }
+
+            // 优先使用高德JS API Geocoder
             if (AMAP_KEY && window.AMap) {
                 AMap.plugin(["AMap.Geocoder"], () => {
-                    const geocoder = new AMap.Geocoder();
+                    const geocoder = new AMap.Geocoder({ radius: 1000 });
                     geocoder.getAddress([userLocation.lng, userLocation.lat], (status, result) => {
-                        if (status === "complete" && result.regeocode) {
-                            textEl.textContent = prefix + " " + result.regeocode.formattedAddress;
+                        if (status === "complete" && result.regeocode && result.regeocode.formattedAddress) {
+                            setAddr(result.regeocode.formattedAddress);
                         } else {
-                            textEl.textContent = prefix + ` (${userLocation.lng.toFixed(4)}, ${userLocation.lat.toFixed(4)})`;
+                            tryRestApi(); // JS API失败，降级REST API
                         }
                     });
                 });
+                // 3秒超时降级
+                setTimeout(() => tryRestApi(), 3000);
             } else {
-                textEl.textContent = prefix + ` (${userLocation.lng.toFixed(4)}, ${userLocation.lat.toFixed(4)})`;
+                tryRestApi();
             }
         }
 
@@ -719,7 +752,13 @@
             document.getElementById("tab-list").classList.toggle("active", view === "list");
 
             if (view === "map" && map) {
-                setTimeout(() => map.invalidateSize ? map.invalidateSize() : null, 100);
+                setTimeout(() => {
+                    if (window.AMap && map.resize) {
+                        map.resize();
+                    } else if (map.invalidateSize) {
+                        map.invalidateSize();
+                    }
+                }, 100);
             }
         }
 
@@ -806,6 +845,22 @@
                 });
             });
         }
+
+        // ===== 页面可见性：修复从导航APP返回后地图空白 =====
+        function refreshMap() {
+            if (!map) return;
+            setTimeout(() => {
+                if (window.AMap && map.resize) {
+                    map.resize();
+                } else if (map.invalidateSize) {
+                    map.invalidateSize();
+                }
+            }, 100);
+        }
+        document.addEventListener("visibilitychange", () => {
+            if (!document.hidden) refreshMap();
+        });
+        window.addEventListener("pageshow", () => refreshMap());
 
         // ===== 启动 =====
         window.addEventListener("DOMContentLoaded", () => {

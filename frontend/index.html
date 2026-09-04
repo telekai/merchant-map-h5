@@ -221,12 +221,19 @@
     <!-- Toast -->
     <div class="toast" id="toast"></div>
 
+    <!-- 高德地图JS API 安全密钥配置（必须在加载JS API之前设置） -->
+    <script>
+        window._AMapSecurityConfig = {
+            securityJsCode: "bfedfd3bd037fc44f6134ef3384e21b0",
+        };
+    </script>
     <!-- 高德地图JS API -->
     <script>
         // ===== 配置 =====
         // 本机开发使用离线模式（不依赖高德JS API Key）
         // 正式部署时替换为真实高德JS API Key
         const AMAP_KEY = "aa0cbc9763f255381f07ba4960ffb968"; // 高德JS API Key
+        const AMAP_SECURITY_CODE = "bfedfd3bd037fc44f6134ef3384e21b0"; // 安全密钥
         // 部署后自动使用当前域名（HTTP/HTTPS自适应），本地开发回退到localhost
         const API_BASE = window.location.origin;
         const DEFAULT_RADIUS = 5000;
@@ -849,18 +856,29 @@
         // ===== 页面可见性：修复从导航APP返回后地图空白 =====
         function refreshMap() {
             if (!map) return;
-            setTimeout(() => {
-                if (window.AMap && map.resize) {
-                    map.resize();
-                } else if (map.invalidateSize) {
-                    map.invalidateSize();
-                }
-            }, 100);
+            // 多次延迟调用resize，覆盖不同手机浏览器从后台恢复的速度差异
+            [50, 200, 500, 1000].forEach(delay => {
+                setTimeout(() => {
+                    if (window.AMap && map.resize) {
+                        map.resize();
+                    } else if (map.invalidateSize) {
+                        map.invalidateSize();
+                    }
+                }, delay);
+            });
         }
+        // visibilitychange：页面从隐藏恢复到可见（Android Chrome等）
         document.addEventListener("visibilitychange", () => {
             if (!document.hidden) refreshMap();
         });
-        window.addEventListener("pageshow", () => refreshMap());
+        // pageshow：页面从bfcache恢复（iOS Safari返回时）
+        window.addEventListener("pageshow", (e) => {
+            if (e.persisted) refreshMap();
+        });
+        // focus：窗口重新获得焦点（部分安卓浏览器从导航APP返回时）
+        window.addEventListener("focus", () => refreshMap());
+        // resume：某些Webview的生命周期事件
+        window.addEventListener("resume", () => refreshMap());
 
         // ===== 启动 =====
         window.addEventListener("DOMContentLoaded", () => {

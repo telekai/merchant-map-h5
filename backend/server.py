@@ -210,8 +210,9 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_file(os.path.join(FRONTEND_DIR, "index.html"), "text/html; charset=utf-8")
             return
 
-        if path.startswith("/h5/"):
-            rel_path = path[4:]  # remove /h5/
+        # 其他前端静态文件（qrcode.html等）
+        if not path.startswith("/api/"):
+            rel_path = path.lstrip("/")
             if rel_path == "" or rel_path == "/":
                 rel_path = "index.html"
             filepath = os.path.join(FRONTEND_DIR, rel_path)
